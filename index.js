@@ -43,7 +43,8 @@ PDFDocument.prototype.addSVG = function (svg, x, y, options) {
 };
 
 async function decryptFile(encryptionKey, encryptedData) {
-	const aesCtr = new aesjs.ModeOfOperation.cbc(Buffer.from(encryptionKey, "utf8"), Buffer.from(encryptionKey, "utf8"));
+	let key = Buffer.from(encryptionKey, "utf8").slice(0, 16);
+	const aesCtr = new aesjs.ModeOfOperation.cbc(key, key);
 	let decryptedBytes = aesCtr.decrypt(Buffer.from(encryptedData, "base64"));
 	for(let i=16;i>0;i--){
 		if (decryptedBytes.slice(decryptedBytes.length-i).every(e=>e==i)) {
@@ -113,7 +114,11 @@ async function downloadKitabooBook(bookReaderUrl) {
 	privateKey += "\n-----END RSA PRIVATE KEY-----";
 
 	let key = forge.pki.privateKeyFromPem(privateKey);
-	let encryptionKey = key.decrypt(forge.util.decode64(encryptedEncryptionKey));
+	let encryptionKeyStillEncrypted = key.decrypt(forge.util.decode64(encryptedEncryptionKey));
+
+	let anotherKey = Buffer.from(("" + ebookID + "0000000000000000").slice(0, 16), "utf8");
+	const encryptionKeyDecrypter = new aesjs.ModeOfOperation.cbc(anotherKey, anotherKey);
+	let encryptionKey = aesjs.utils.utf8.fromBytes(encryptionKeyDecrypter.decrypt(Buffer.from(encryptionKeyStillEncrypted, "base64")));
 
 	console.log("Fetching book content...");
 
@@ -308,7 +313,7 @@ async function downloadBookTabBook(redirectUrl, cookie) { // bookReaderUrl,
 
 		if (pdf.status == 404) {
 			isXps = true;
-			i = 0; // restart the loop
+			i = -1; // restart the loop
 			console.log("DETECTED XPS FORMAT, DOWNLOADING INDIVIDUAL UNITS...");
 			await fs.promises.mkdir("xps_" + title, { recursive: true }); // adding prefix to gitignore
 			continue;
