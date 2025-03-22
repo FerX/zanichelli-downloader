@@ -83,7 +83,10 @@ async function downloadKitabooBook(bookReaderUrl) {
 	console.log("Obtaining encryption encryption key..."); // yeah, that's not a typo
 
 	let downloadBook = await fetch(`https://webreader.zanichelli.it/downloadapi/auth/contentserver/book/123234234/HTML5/${bookID}/downloadBook?state=online`, {
-		headers: { usertoken },
+		headers: {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36", // refuses to respond without it
+			usertoken
+		},
 	}).catch((err) => {
 		console.log("Error: ", err);
 		process.exit(1);
@@ -99,7 +102,11 @@ async function downloadKitabooBook(bookReaderUrl) {
 	console.log("Fetching encrypted encryption key...")
 
 	let encryptedEncryptionKey = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/enc_resource.key`, {
-		headers: { authorization: jwtToken, cookie: readerCookies },
+		headers: {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+			authorization: jwtToken, 
+			cookie: readerCookies
+		},
 	}).then((res) => res.text()).catch((err) => {
 		console.log("Error: ", err);
 		process.exit(1);
@@ -122,7 +129,12 @@ async function downloadKitabooBook(bookReaderUrl) {
 
 	console.log("Fetching book content...");
 
-	let content = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/content.opf`, { headers: { cookie: readerCookies } }).then((res) => res.text()).then(parseString).catch((err) => {
+	let content = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/content.opf`, { 
+		headers: {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+			cookie: readerCookies 
+		}
+	}).then((res) => res.text()).then(parseString).catch((err) => {
 		console.log("Error: ", err);
 		process.exit(1);
 	});
@@ -153,7 +165,10 @@ async function downloadKitabooBook(bookReaderUrl) {
 				const abortController = new AbortController();
 				const promise = fetch(
 					`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}svgz`]}`,
-					{ headers: { cookie: readerCookies }, controller: abortController.signal }
+					{ headers: {
+						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+						cookie: readerCookies 
+					}, controller: abortController.signal }
 				).then(async (res) => {
 					return decryptFile(encryptionKey, await res.text());
 				});
@@ -168,7 +183,10 @@ async function downloadKitabooBook(bookReaderUrl) {
 				const abortController = new AbortController();
 				const promise = fetch(
 					`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}png`]}`,
-					{ headers: { cookie: readerCookies }, controller: abortController.signal }
+					{ headers: {
+						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+						cookie: readerCookies
+					}, controller: abortController.signal }
 				).then(async (res) => {
 					return decryptFile(encryptionKey, await res.text());
 				});
@@ -183,7 +201,10 @@ async function downloadKitabooBook(bookReaderUrl) {
 				const abortController = new AbortController();
 				const promise = fetch(
 					`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}jpg`]}`,
-					{ headers: { cookie: readerCookies }, controller: abortController.signal }
+					{ headers: {
+						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+						cookie: readerCookies
+					}, controller: abortController.signal }
 				).then(async (res) => {
 					return decryptFile(encryptionKey, await res.body());
 				});
