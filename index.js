@@ -130,11 +130,7 @@ async function downloadKitabooBook(bookReaderUrl) {
 	privateKey += "\n-----END RSA PRIVATE KEY-----";
 
 	let key = forge.pki.privateKeyFromPem(privateKey);
-	let encryptionKeyStillEncrypted = key.decrypt(forge.util.decode64(encryptedEncryptionKey));
-
-	let anotherKey = Buffer.from(("" + ebookID + "0000000000000000").slice(0, 16), "utf8");
-	const encryptionKeyDecrypter = new aesjs.ModeOfOperation.cbc(anotherKey, anotherKey);
-	let encryptionKey = aesjs.utils.utf8.fromBytes(encryptionKeyDecrypter.decrypt(Buffer.from(encryptionKeyStillEncrypted, "base64")));
+	let encryptionKey = key.decrypt(forge.util.decode64(encryptedEncryptionKey));
 
 	console.log("Fetching book content...");
 
