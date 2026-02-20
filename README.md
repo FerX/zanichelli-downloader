@@ -4,7 +4,7 @@ A tool to download your books from Zanichelli into PDFs.
 
 ## Requirements
 
-- [Node](https://nodejs.org/it/) >= 14.0
+- [Node](https://nodejs.org/it/) >= 18.0
 - Windows 10 or higher (The script hasn't been tested on other platforms, but it may work, you will likely have issues on mac os)
 - A modern browser (Chrome, Firefox, Edge, etc.)
 
