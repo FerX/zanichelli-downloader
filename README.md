@@ -1,6 +1,6 @@
 # Zanichelli-downloader
 
-A tool to download your books from Zanichelli into PDFs.
+A tool to download your books from Zanichelli into PDF (Standard book) or EPUB (Liquid book).
 
 ## Requirements
 
@@ -34,6 +34,12 @@ A tool to download your books from Zanichelli into PDFs.
 6. For some books, further actions may be required, follow the instructions on the terminal
 
 NOTE: You will get logged out from your account while the script is running. Do NOT login in a browser at it will break the script while it's running.
+
+## A note about EPUB
+
+[EPUB](https://en.wikipedia.org/wiki/EPUB), unlike PDF, doesn't have any fixed pagination, meaning that the file contains mostly text data, this makes the format a bit weirder to read, but allows things like enlarging text, think amazon kindle.
+
+That said, you will have to look for a dedicated reading program, one I can vouch for is (Calibre](https://calibre-ebook.com/).
 
 ## Disclaimer
 
