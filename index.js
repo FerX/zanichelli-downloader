@@ -9,6 +9,7 @@ import path from "path";
 import aesjs from "aes-js";
 import forge from "node-forge";
 import yargs from "yargs";
+import ZipStream from "zip-stream";
 
 const argv = yargs(process.argv.slice(2))
 	.option("username", {
@@ -87,7 +88,7 @@ async function downloadKitabooBook(bookReaderUrl) {
 
 	let ebookID = bookDetails.bookList[0].book.ebookID;
 
-	console.log("Obtaining encryption encryption key..."); // yeah, that's not a typo
+	console.log("Requesting access...");
 
 	let downloadBookRequest = await fetch(`https://webreader.zanichelli.it/downloadapi/auth/contentserver/book/123234234/HTML5/${bookID}/downloadBook?state=online`, {
 		headers: {
@@ -107,129 +108,222 @@ async function downloadKitabooBook(bookReaderUrl) {
 	let rawPrivateKey = downloadBook.privateKey;
 	let jwtToken = downloadBook.jwtToken; // note how jwt = json web token, so what you are saying is json web token token... gg
 
-	console.log("Fetching encrypted encryption key...")
+	if (bookDetails.bookList[0].book.assetType == "BOOK") {
+		console.log("Detected standard book, downloading as PDF");
 
-	let encryptedEncryptionKey = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/enc_resource.key`, {
-		headers: {
-			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-			"Referer": "https://webreader.zanichelli.it/",
-			authorization: jwtToken, 
-			cookie: readerCookies
-		},
-	}).then((res) => res.text()).catch((err) => {
-		console.log("Error: ", err);
-		process.exit(1);
-	});
+		console.log("Fetching encrypted encryption key...")
 
-	console.log("Processing...");
-	
-	console.log("Decrypting encryption key...");
+		let encryptedEncryptionKey = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/enc_resource.key`, {
+			headers: {
+				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+				"Referer": "https://webreader.zanichelli.it/",
+				authorization: jwtToken, 
+				cookie: readerCookies
+			},
+		}).then((res) => res.text()).catch((err) => {
+			console.log("Error: ", err);
+			process.exit(1);
+		});
 
-	let privateKey = "-----BEGIN RSA PRIVATE KEY-----\n";
-	privateKey += rawPrivateKey.match(/.{1,64}/g).join('\n');
-	privateKey += "\n-----END RSA PRIVATE KEY-----";
+		console.log("Processing...");
+		
+		console.log("Decrypting encryption key...");
 
-	let key = forge.pki.privateKeyFromPem(privateKey);
-	let encryptionKey = key.decrypt(forge.util.decode64(encryptedEncryptionKey));
+		let privateKey = "-----BEGIN RSA PRIVATE KEY-----\n";
+		privateKey += rawPrivateKey.match(/.{1,64}/g).join('\n');
+		privateKey += "\n-----END RSA PRIVATE KEY-----";
 
-	console.log("Fetching book content...");
+		let key = forge.pki.privateKeyFromPem(privateKey);
+		let encryptionKey = key.decrypt(forge.util.decode64(encryptedEncryptionKey));
 
-	let content = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/content.opf`, { 
-		headers: {
-			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-			"Referer": "https://webreader.zanichelli.it/",
-			cookie: readerCookies 
+		console.log("Fetching book content...");
+
+		let content = await fetch(`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/content.opf`, { 
+			headers: {
+				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+				"Referer": "https://webreader.zanichelli.it/",
+				cookie: readerCookies 
+			}
+		}).then((res) => res.text()).then(parseString).catch((err) => {
+			console.log("Error: ", err);
+			process.exit(1);
+		});
+
+		// mention in content.metadata of render type, could be usefull in the future if other formats get added
+
+		if (content.Error) {
+			console.log("Error: ", ...content.Error.Code, ...content.Error.Message);
+			process.exit(1);
 		}
-	}).then((res) => res.text()).then(parseString).catch((err) => {
-		console.log("Error: ", err);
-		process.exit(1);
-	});
 
-	// mention in content.metadata of render type, could be usefull in the future if other formats get added
+		let title = content.package.metadata[0]["dc:title"][0];
 
-	if (content.Error) {
-		console.log("Error: ", ...content.Error.Code, ...content.Error.Message);
-		process.exit(1);
-	}
+		let items = {};
 
-	let title = content.package.metadata[0]["dc:title"][0];
-
-	let items = {};
-
-	for (let item of content.package.manifest[0].item) {
-		if (['image/svg+xml', 'image/png', 'image/jpeg'].includes(item.$['media-type'])) items[item.$.id] = item.$.href;
-	}
-
-	const doc = new PDFDocument();
-	doc.pipe(fs.createWriteStream(title.replace(/[^a-z0-9]/gi, '_') + '.pdf'));
-
-	for (let [i, itemref] of content.package.spine[0].itemref.entries()) {
-		console.log(`Downloading ${itemref.$.idref}`);
-		if (items[`images${itemref.$.idref}svgz`] !== undefined) {
-			let svg = null;
-			while (!svg) {
-				const abortController = new AbortController();
-				const promise = fetch(
-					`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}svgz`]}`,
-					{ headers: {
-						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-						"Referer": "https://webreader.zanichelli.it/",
-						cookie: readerCookies 
-					}, controller: abortController.signal }
-				).then(async (res) => {
-					return decryptFile(encryptionKey, await res.text());
-				});
-				const timeoutId = setTimeout(() => abortController.abort(), 10000);
-				svg = await promise;
-				clearTimeout(timeoutId);
-			}
-			doc.addSVG(svg, 0, 0, { preserveAspectRatio: "xMinYMin meet" });
-		} else if (items[`images${itemref.$.idref}png`] !== undefined) {
-			let png = null;
-			while (!png) {
-				const abortController = new AbortController();
-				const promise = fetch(
-					`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}png`]}`,
-					{ headers: {
-						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-						"Referer": "https://webreader.zanichelli.it/",
-						cookie: readerCookies
-					}, controller: abortController.signal }
-				).then(async (res) => {
-					return decryptFile(encryptionKey, await res.text());
-				});
-				const timeoutId = setTimeout(() => abortController.abort(), 10000);
-				png = await promise;
-				clearTimeout(timeoutId);
-			}
-			doc.image(png, 0, 0, {fit: [doc.page.width, doc.page.height], align: 'center', valign: 'center'});
-		} else if (items[`images${itemref.$.idref}jpg`] !== undefined) {
-			let jpeg = null;
-			while (!jpeg) {
-				const abortController = new AbortController();
-				const promise = fetch(
-					`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}jpg`]}`,
-					{ headers: {
-						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-						"Referer": "https://webreader.zanichelli.it/",
-						cookie: readerCookies
-					}, controller: abortController.signal }
-				).then(async (res) => {
-					return decryptFile(encryptionKey, await res.body());
-				});
-				const timeoutId = setTimeout(() => abortController.abort(), 5000)
-				jpeg = await promise;
-				clearTimeout(timeoutId);
-			}
-			doc.image(jpeg, 0, 0, {fit: [doc.page.width, doc.page.height], align: 'center', valign: 'center'});
-		} else {
-			console.log(`Unable to find suitable format for ${itemref.$.idref}`);
+		for (let item of content.package.manifest[0].item) {
+			if (['image/svg+xml', 'image/png', 'image/jpeg'].includes(item.$['media-type'])) items[item.$.id] = item.$.href;
 		}
-		if (i < content.package.spine[0].itemref.length - 1) doc.addPage();
-	}
 
-	doc.end();
-	console.log("Done! You'll find the PDF in the directory of the script");
+		const doc = new PDFDocument();
+		doc.pipe(fs.createWriteStream(title.replace(/[^a-z0-9]/gi, '_') + '.pdf'));
+
+		for (let [i, itemref] of content.package.spine[0].itemref.entries()) {
+			console.log(`Downloading ${itemref.$.idref}`);
+			if (items[`images${itemref.$.idref}svgz`] !== undefined) {
+				let svg = null;
+				while (!svg) {
+					const abortController = new AbortController();
+					const promise = fetch(
+						`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}svgz`]}`,
+						{ headers: {
+							"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+							"Referer": "https://webreader.zanichelli.it/",
+							cookie: readerCookies 
+						}, controller: abortController.signal }
+					).then(async (res) => {
+						return decryptFile(encryptionKey, await res.text());
+					});
+					const timeoutId = setTimeout(() => abortController.abort(), 10000);
+					svg = await promise;
+					clearTimeout(timeoutId);
+				}
+				doc.addSVG(svg, 0, 0, { preserveAspectRatio: "xMinYMin meet" });
+			} else if (items[`images${itemref.$.idref}png`] !== undefined) {
+				let png = null;
+				while (!png) {
+					const abortController = new AbortController();
+					const promise = fetch(
+						`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}png`]}`,
+						{ headers: {
+							"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+							"Referer": "https://webreader.zanichelli.it/",
+							cookie: readerCookies
+						}, controller: abortController.signal }
+					).then(async (res) => {
+						return decryptFile(encryptionKey, await res.text());
+					});
+					const timeoutId = setTimeout(() => abortController.abort(), 10000);
+					png = await promise;
+					clearTimeout(timeoutId);
+				}
+				doc.image(png, 0, 0, {fit: [doc.page.width, doc.page.height], align: 'center', valign: 'center'});
+			} else if (items[`images${itemref.$.idref}jpg`] !== undefined) {
+				let jpeg = null;
+				while (!jpeg) {
+					const abortController = new AbortController();
+					const promise = fetch(
+						`https://webreader.zanichelli.it/${ebookID}/html5/${ebookID}/OPS/${items[`images${itemref.$.idref}jpg`]}`,
+						{ headers: {
+							"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+							"Referer": "https://webreader.zanichelli.it/",
+							cookie: readerCookies
+						}, controller: abortController.signal }
+					).then(async (res) => {
+						return decryptFile(encryptionKey, await res.body());
+					});
+					const timeoutId = setTimeout(() => abortController.abort(), 5000)
+					jpeg = await promise;
+					clearTimeout(timeoutId);
+				}
+				doc.image(jpeg, 0, 0, {fit: [doc.page.width, doc.page.height], align: 'center', valign: 'center'});
+			} else {
+				console.log(`Unable to find suitable format for ${itemref.$.idref}`);
+			}
+			if (i < content.package.spine[0].itemref.length - 1) doc.addPage();
+		}
+
+		doc.end();
+		console.log("Done! You'll find the PDF in the directory of the script");
+	} else if (bookDetails.bookList[0].book.assetType == "EPUB") {
+		console.log("Detected liquid book, downloading as EPUB");
+
+		const archive = new ZipStream({store: true});
+
+		archive.on("error", function (err) {
+			throw err;
+		});
+
+		function saveFile(fileName, content) {
+			return new Promise((resolve, reject) => {
+				archive.entry(content, {
+					name: fileName,
+				}, (err, res) => {
+					if (err) reject(err);
+					else resolve(res);
+				});
+			});
+		}
+
+		archive.pipe(fs.createWriteStream(bookDetails.bookList[0].book.title.trim().replace(/[^a-z0-9]/gi, '_') + ".epub"));
+
+		console.log("Fetching container file");
+		
+		const rootUrl = `https://webreader.zanichelli.it/${ebookID}/fixed_epub_image/${ebookID}/`
+
+		const containerFile = await fetch(rootUrl + "META-INF/container.xml", { 
+			headers: {
+				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+				"Referer": "https://webreader.zanichelli.it/",
+				cookie: readerCookies 
+			}
+		}).then((res) => res.text()).catch((err) => {
+			console.log("Error: ", err);
+			process.exit(1);
+		});
+
+		const parsedContainerFile = await parseString(containerFile);
+		const rootFileUrl = parsedContainerFile.container.rootfiles[0].rootfile[0].$['full-path'];
+
+		await saveFile("META-INF/container.xml", containerFile);
+
+		console.log("Fetching root file");
+
+		const rootFile = await fetch(rootUrl + rootFileUrl, { 
+			headers: {
+				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+				"Referer": "https://webreader.zanichelli.it/",
+				cookie: readerCookies 
+			}
+		}).then((res) => res.text()).catch((err) => {
+			console.log("Error: ", err);
+			process.exit(1);
+		});
+
+		const parsedRootFile = await parseString(rootFile);
+
+		await saveFile(rootFileUrl, rootFile);
+
+		const prefix = path.dirname(rootFileUrl) + '/';
+
+		for (let i = 0; i < parsedRootFile.package.manifest[0].item.length; i++) {
+			console.log(`Fetching content ${i+1}/${parsedRootFile.package.manifest[0].item.length}`);
+
+			const fileEntry = parsedRootFile.package.manifest[0].item[i];
+			const file = await fetch(rootUrl + prefix + fileEntry.$['href'], { 
+				headers: {
+					"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+					"Referer": "https://webreader.zanichelli.it/",
+					cookie: readerCookies 
+				}
+			}).then(res => {
+				if (!res.ok) throw res;
+				return res;
+			}).then((res) => res.buffer()).catch((err) => {
+				console.log("Error: ", err);
+				process.exit(1);
+			});
+
+			await saveFile(prefix + fileEntry.$['href'], file);
+		}
+
+		console.log("Finalising");
+
+		archive.finalize();
+		console.log("Done! You'll find the EPUB in the directory of the script");
+
+	} else {
+		console.log(`Unknown book type (${bookDetails.bookList[0].book.assetType}), please open an issue on github`);
+	}
 }
 
 async function downloadBookTabBook(redirectUrl, cookie) { // bookReaderUrl, 
