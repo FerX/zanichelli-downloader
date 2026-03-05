@@ -33,7 +33,7 @@ A tool to download your books from Zanichelli into PDF (Standard book) or EPUB (
 5. Wait, the book will be downloaded and saved to the script' directory
 6. For some books, further actions may be required, follow the instructions on the terminal
 
-NOTE: You will get logged out from your account while the script is running. Do NOT login in a browser at it will break the script while it's running.
+NOTE: You will get logged out from your account while the script is running. Do NOT login in a browser while it's running otherwise it will break the script.
 
 ## A note about EPUB
 
