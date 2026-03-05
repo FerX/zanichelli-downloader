@@ -39,7 +39,7 @@ NOTE: You will get logged out from your account while the script is running. Do 
 
 [EPUB](https://en.wikipedia.org/wiki/EPUB), unlike PDF, doesn't have any fixed pagination, meaning that the file contains mostly text data, this makes the format a bit weirder to read, but allows things like enlarging text, think amazon kindle.
 
-That said, you will have to look for a dedicated reading program, one I can vouch for is (Calibre](https://calibre-ebook.com/).
+That said, you will have to look for a dedicated reading program, one I can vouch for is [Calibre](https://calibre-ebook.com/).
 
 ## Disclaimer
 
